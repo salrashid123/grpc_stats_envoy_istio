@@ -380,7 +380,28 @@ The same stat on grafana too
 
 ![images/istio_grafana.png](images/istio_grafana.png)
 
+---
 
+## Metrics from gRPC Prometheus endpoint
+
+You can also start a gRPC server which also serves as an endpoint surfacing prometheus metrics.  In this mode, the individual gRPC server starts up an http server which only serves to provide prometheus metrics.  This is described in the link here:
+
+- [Go gRPC Interceptors for Prometheus monitoring](https://github.com/grpc-ecosystem/go-grpc-prometheus)
+
+You can optionally enable this setting by uncommenting the lines in `greeter_server/main.go` and in `prometheus/prometheus.yml`
+
+The metrics would look like the following
+
+```log
+# HELP grpc_server_msg_received_total Total number of RPC stream messages received on the server.
+# TYPE grpc_server_msg_received_total counter
+grpc_server_msg_received_total{grpc_method="Check",grpc_service="grpc.health.v1.Health",grpc_type="unary"} 8
+grpc_server_msg_received_total{grpc_method="SayHello",grpc_service="helloworld.Greeter",grpc_type="unary"} 4
+grpc_server_msg_received_total{grpc_method="SayHelloBiDiStream",grpc_service="helloworld.Greeter",grpc_type="bidi_stream"} 40
+grpc_server_msg_received_total{grpc_method="SayHelloClientStream",grpc_service="helloworld.Greeter",grpc_type="client_stream"} 16
+grpc_server_msg_received_total{grpc_method="SayHelloServerStream",grpc_service="helloworld.Greeter",grpc_type="server_stream"} 4
+grpc_server_msg_received_total{grpc_method="Watch",grpc_service="grpc.health.v1.Health",grpc_type="server_stream"} 0
+```
 ---
 
 This repo is just a tutorial on fine-grain observability with istio and envoy

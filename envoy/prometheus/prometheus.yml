@@ -27,3 +27,9 @@ scrape_configs:
     metrics_path: '/stats/prometheus'
     static_configs:
     - targets: ['localhost:9000']
+
+  # uncomment for direct metrics
+  # - job_name: 'grpcserver'
+  #   scrape_interval: 1s
+  #   static_configs:
+  #     - targets: ['localhost:9092']

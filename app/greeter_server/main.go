@@ -1,22 +1,3 @@
-// Forked from https://github.com/grpc/grpc-go.
-/*
- *
- * Copyright 2015 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
-
 package main
 
 import (
@@ -31,9 +12,12 @@ import (
 	pb "helloworld"
 
 	"github.com/google/uuid"
+	//"github.com/prometheus/client_golang/prometheus"
+	//"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
+	//grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -44,11 +28,25 @@ var (
 	grpcport     = flag.String("grpcport", ":50051", "grpcport")
 	randomJitter = flag.Int("randomJitter", 100, "host:port of gRPC server")
 	hs           *health.Server
+
+	// uncomment for direct metrics
+	// reg = prometheus.NewRegistry()
+	// grpcMetrics             = grpc_prometheus.NewServerMetrics()
+	// customizedCounterMetric = prometheus.NewCounterVec(prometheus.CounterOpts{
+	// 	Name: "demo_server_say_hello_method_handle_count",
+	// 	Help: "Total number of RPCs handled on the server.",
+	// }, []string{"name"})
 )
 
 // server is used to implement helloworld.GreeterServer.
 type server struct{}
 type healthServer struct{}
+
+func init() {
+	// uncomment for direct metrics
+	// reg.MustRegister(grpcMetrics, customizedCounterMetric)
+	// customizedCounterMetric.WithLabelValues("Test")
+}
 
 func (s *healthServer) Check(ctx context.Context, in *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
 	log.Printf("Handling grpc Check request: " + in.Service)
@@ -122,11 +120,26 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-	sopts := []grpc.ServerOption{grpc.MaxConcurrentStreams(100)}
-	s := grpc.NewServer(sopts...)
+
+	// uncomment for direct metrics
+	// httpServer := &http.Server{Handler: promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), Addr: fmt.Sprintf("0.0.0.0:%d", 9092)}
+	// s := grpc.NewServer(
+	// 	grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor()),
+	// 	grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor()),
+	// )
+
+	s := grpc.NewServer()
 	pb.RegisterGreeterServer(s, &server{})
 
 	healthpb.RegisterHealthServer(s, &healthServer{})
+
+	// uncomment for direct metrics
+	// grpcMetrics.InitializeMetrics(s)
+	// go func() {
+	// 	if err := httpServer.ListenAndServe(); err != nil {
+	// 		log.Fatal("Unable to start a http server.")
+	// 	}
+	// }()
 
 	log.Printf("Starting server...")
 	if err := s.Serve(lis); err != nil {
