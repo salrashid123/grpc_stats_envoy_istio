@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"time"
 
@@ -11,11 +14,15 @@ import (
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 var (
-	address = flag.String("host", "localhost:8080", "host:port of gRPC server")
+	address    = flag.String("host", "localhost:8080", "host:port of gRPC server")
+	cacert     = flag.String("cacert", "CA_crt.pem", "TLS CACert")
+	usetls     = flag.Bool("usetls", false, "startup with TLS")
+	serverName = flag.String("servername", "grpc.domain.com", "SNI Name")
 )
 
 const (
@@ -26,10 +33,29 @@ func main() {
 	flag.Parse()
 
 	// Set up a connection to the server.
-	conn, err := grpc.Dial(*address, grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("did not connect: %v", err)
+	// Set up a connection to the server.
+	var conn *grpc.ClientConn
+	var err error
+
+	if !*usetls {
+		conn, err = grpc.Dial(*address, grpc.WithInsecure())
+	} else {
+		var tlsCfg tls.Config
+		rootCAs := x509.NewCertPool()
+		pem, err := ioutil.ReadFile(*cacert)
+		if err != nil {
+			log.Fatalf("failed to load root CA certificates  error=%v", err)
+		}
+		if !rootCAs.AppendCertsFromPEM(pem) {
+			log.Fatalf("no root CA certs parsed from file ")
+		}
+		tlsCfg.RootCAs = rootCAs
+		tlsCfg.ServerName = *serverName
+
+		ce := credentials.NewTLS(&tlsCfg)
+		conn, err = grpc.Dial(*address, grpc.WithTransportCredentials(ce))
 	}
+
 	defer conn.Close()
 	c := pb.NewGreeterClient(conn)
 
@@ -39,7 +65,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	resp, err := healthpb.NewHealthClient(conn).Check(ctx, &healthpb.HealthCheckRequest{Service: "helloworld.GreeterServer"})
+	resp, err := healthpb.NewHealthClient(conn).Check(ctx, &healthpb.HealthCheckRequest{Service: "helloworld.Greeter"})
 	if err != nil {
 		log.Fatalf("HealthCheck failed %+v", err)
 	}
@@ -49,12 +75,13 @@ func main() {
 	log.Printf("RPC HealthChekStatus:%v", resp.GetStatus())
 
 	// ******** Unary Request
-	r, err := c.SayHello(ctx, &pb.HelloRequest{Name: defaultName})
-	if err != nil {
-		log.Fatalf("could not greet: %v", err)
+	for i := 0; i < 5; i++ {
+		r, err := c.SayHello(ctx, &pb.HelloRequest{Name: defaultName})
+		if err != nil {
+			log.Fatalf("could not greet: %v", err)
+		}
+		log.Printf("Unary Request Response:  %s", r.Message)
 	}
-	log.Printf("Unary Request Response:  %s", r.Message)
-
 	// ******** CLIENT Streaming
 
 	cstream, err := c.SayHelloClientStream(context.Background())
@@ -102,7 +129,7 @@ func main() {
 	done := make(chan bool)
 	stream, err = c.SayHelloBiDiStream(context.Background())
 	if err != nil {
-		log.Fatalf("openn stream error %v", err)
+		log.Fatalf("open stream error %v", err)
 	}
 	ctx = stream.Context()
 

@@ -1,0 +1,36 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fe-srv-lb
+  labels:
+    type: fe-srv
+  annotations:
+    service.alpha.kubernetes.io/app-protocols: '{"fe":"HTTP2"}'
+spec:
+  type: LoadBalancer  
+  ports:
+  - name: fe
+    port: 50051
+    protocol: TCP
+    targetPort: 50051
+  selector:
+    app: fe
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rpc-app-service
+  labels:
+    type: fe-prom-srv
+  annotations:
+    service.alpha.kubernetes.io/app-protocols: '{"fe-prom":"HTTP"}'
+spec:
+  type: ClusterIP  
+  ports:
+  - name: fe-prom
+    port: 9092
+    protocol: TCP
+    targetPort: 9092
+  selector:
+    app: fe

@@ -7,35 +7,52 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"time"
 
 	pb "helloworld"
 
 	"github.com/google/uuid"
-	//"github.com/prometheus/client_golang/prometheus"
-	//"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	// *********** Start gRPC built in
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	// *********** End gRPC built in
+
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-
-	//grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+	// *********** Start OpenCensus
+	// "contrib.go.opencensus.io/exporter/prometheus"
+	// "go.opencensus.io/plugin/ocgrpc"
+	// "go.opencensus.io/stats/view"
+	// *********** End Opencensus
 )
 
 var (
 	grpcport     = flag.String("grpcport", ":50051", "grpcport")
 	randomJitter = flag.Int("randomJitter", 100, "host:port of gRPC server")
-	hs           *health.Server
 
-	// uncomment for direct metrics
-	// reg = prometheus.NewRegistry()
-	// grpcMetrics             = grpc_prometheus.NewServerMetrics()
-	// customizedCounterMetric = prometheus.NewCounterVec(prometheus.CounterOpts{
-	// 	Name: "demo_server_say_hello_method_handle_count",
-	// 	Help: "Total number of RPCs handled on the server.",
-	// }, []string{"name"})
+	tlsCert = flag.String("tlsCert", "server_crt.pem", "TLS Server Certificate")
+	tlsKey  = flag.String("tlsKey", "server_key.pem", "TLS Server Key")
+	usetls  = flag.Bool("usetls", false, "startup with TLS")
+
+	hs *health.Server
+
+	// *********** Start gRPC built in
+	reg                     = prometheus.NewRegistry()
+	grpcMetrics             = grpc_prometheus.NewServerMetrics()
+	customizedCounterMetric = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "demo_server_say_hello_method_handle_count",
+		Help: "Total number of RPCs handled on the server.",
+	}, []string{"name"})
+	// *********** End gRPC built in
 )
 
 // server is used to implement helloworld.GreeterServer.
@@ -43,21 +60,24 @@ type server struct{}
 type healthServer struct{}
 
 func init() {
-	// uncomment for direct metrics
-	// reg.MustRegister(grpcMetrics, customizedCounterMetric)
-	// customizedCounterMetric.WithLabelValues("Test")
+	// *********** Start gRPC built in
+	reg.MustRegister(grpcMetrics, customizedCounterMetric)
+	customizedCounterMetric.WithLabelValues("Test")
+	// *********** End gRPC built in
 }
 
 func (s *healthServer) Check(ctx context.Context, in *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
 	log.Printf("Handling grpc Check request: " + in.Service)
-	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
+	if in.Service == "helloworld.Greeter" {
+		return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
+	}
+	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_UNKNOWN}, nil
 }
 
 func (s *healthServer) Watch(in *healthpb.HealthCheckRequest, srv healthpb.Health_WatchServer) error {
 	return status.Error(codes.Unimplemented, "Watch is not implemented")
 }
 
-// SayHello implements helloworld.GreeterServer
 func (s *server) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
 	uid, _ := uuid.NewUUID()
 	msg := fmt.Sprintf("Hello %s  --> %s ", in.Name, uid.String())
@@ -121,25 +141,58 @@ func main() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	// uncomment for direct metrics
-	// httpServer := &http.Server{Handler: promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), Addr: fmt.Sprintf("0.0.0.0:%d", 9092)}
-	// s := grpc.NewServer(
-	// 	grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor()),
-	// 	grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor()),
-	// )
+	var s *grpc.Server
+	sopts := []grpc.ServerOption{grpc.MaxConcurrentStreams(10)}
 
-	s := grpc.NewServer()
+	if *usetls {
+		ce, err := credentials.NewServerTLSFromFile(*tlsCert, *tlsKey)
+		if err != nil {
+			log.Fatalf("Failed to generate credentials %v", err)
+		}
+		sopts = append(sopts, grpc.Creds(ce))
+
+	}
+
+	// *********** Start OpenCensus
+	// pe, err := prometheus.NewExporter(prometheus.Options{
+	// 	Namespace: "oc",
+	// })
+	// if err != nil {
+	// 	log.Fatalf("Failed to create Prometheus exporter: %v", err)
+	// }
+
+	// go func() {
+	// 	mux := http.NewServeMux()
+	// 	mux.Handle("/metrics", pe)
+	// 	if err := http.ListenAndServe(":9092", mux); err != nil {
+	// 		log.Fatalf("Failed to run Prometheus /metrics endpoint: %v", err)
+	// 	}
+	// }()
+
+	// if err := view.Register(ocgrpc.DefaultServerViews...); err != nil {
+	// 	log.Fatal(err)
+	// }
+	// sopts = append(sopts, grpc.StatsHandler(&ocgrpc.ServerHandler{}))
+	// s = grpc.NewServer(sopts...)
+	// *********** End Opencensus
+
+	// *********** Start Direct
+	// Use gRPC-go internal prom exporter
+	httpServer := &http.Server{Handler: promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), Addr: fmt.Sprintf("0.0.0.0:%d", 9092)}
+	sopts = append(sopts, grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor()), grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor()))
+
+	s = grpc.NewServer(sopts...)
+	grpcMetrics.InitializeMetrics(s)
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil {
+			log.Fatal("Unable to start a http server.")
+		}
+	}()
+	// *********** End Direct
+
 	pb.RegisterGreeterServer(s, &server{})
 
 	healthpb.RegisterHealthServer(s, &healthServer{})
-
-	// uncomment for direct metrics
-	// grpcMetrics.InitializeMetrics(s)
-	// go func() {
-	// 	if err := httpServer.ListenAndServe(); err != nil {
-	// 		log.Fatal("Unable to start a http server.")
-	// 	}
-	// }()
 
 	log.Printf("Starting server...")
 	if err := s.Serve(lis); err != nil {

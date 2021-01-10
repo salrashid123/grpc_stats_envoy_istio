@@ -21,15 +21,13 @@ rule_files:
 scrape_configs:
   # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
   - job_name: 'envoy'
-
-    # metrics_path defaults to '/metrics'
-    # scheme defaults to 'http'.
     metrics_path: '/stats/prometheus'
     static_configs:
     - targets: ['localhost:9000']
 
-  # uncomment for direct metrics
-  # - job_name: 'grpcserver'
-  #   scrape_interval: 1s
-  #   static_configs:
-  #     - targets: ['localhost:9092']
+  # uncomment for direct metrics or opencensus
+  - job_name: 'grpcserver'
+    scrape_interval: 1s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['localhost:9092']

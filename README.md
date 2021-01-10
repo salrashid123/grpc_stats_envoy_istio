@@ -4,6 +4,14 @@
 
 This repo is a simple tutorial on how to setup envoy and istio such that _per method_ statistics are emitted to prometheus+grafana.
 
+There are several techniques to emitting and collecting gRPC stats shown here:
+
+* `client`-> `envoy` -> `server`:  Envoy will surface prometheus stats endpoint
+* `client`-> `istio(envoy)` -> `server`:  Istio (envoy) will again surface a prometheus endpoint
+* `client` (native prometheus gRPC):  Use gRPC built in prometheus stats endpoint `"github.com/grpc-ecosystem/go-grpc-prometheus"`
+* `client` (opencensus prometheus): Use Opencensus's Prometheus exporter for gRPC `"contrib.go.opencensus.io/exporter/prometheus"`
+* `client`-> `kubernetes ingress/service` -> `server`:  Deploy a GKE gRPC service and allow a prometheus server to scrape each gRPC server eposing `"github.com/grpc-ecosystem/go-grpc-prometheus"`
+
 Both istio and envoy have robust metric monitoring capability but the default granularity for these are at the [service level](https://istio.io/latest/docs/concepts/observability/#service-level-metrics).  If you needed resolution at the method you would need to some further configuration settings if using envoy or istio:
 
 - [Envoy gRPC Statistics filter](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/grpc_stats_filter) (`envoy.filters.http.grpc_stats`)
@@ -388,7 +396,62 @@ You can also start a gRPC server which also serves as an endpoint surfacing prom
 
 - [Go gRPC Interceptors for Prometheus monitoring](https://github.com/grpc-ecosystem/go-grpc-prometheus)
 
-You can optionally enable this setting by uncommenting the lines in `greeter_server/main.go` and in `prometheus/prometheus.yml`
+You can optionally enable this setting by uncommenting the lines in `greeter_server/main.go` 
+
+```golang
+import (
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+var (
+	// *********** Start gRPC built in
+	reg                     = prometheus.NewRegistry()
+	grpcMetrics             = grpc_prometheus.NewServerMetrics()
+	customizedCounterMetric = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "demo_server_say_hello_method_handle_count",
+		Help: "Total number of RPCs handled on the server.",
+	}, []string{"name"})
+	// *********** End gRPC built in
+)
+
+func init() {
+	// *********** Start gRPC built in
+	reg.MustRegister(grpcMetrics, customizedCounterMetric)
+	customizedCounterMetric.WithLabelValues("Test")
+	// *********** End gRPC built in
+}
+
+func main() {
+  ...
+	// *********** Start Direct
+	// Use gRPC-go internal prom exporter
+	httpServer := &http.Server{Handler: promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), Addr: fmt.Sprintf("0.0.0.0:%d", 9092)}
+	sopts = append(sopts, grpc.StreamInterceptor(grpcMetrics.StreamServerInterceptor()), grpc.UnaryInterceptor(grpcMetrics.UnaryServerInterceptor()))
+
+	s = grpc.NewServer(sopts...)
+	grpcMetrics.InitializeMetrics(s)
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil {
+			log.Fatal("Unable to start a http server.")
+		}
+	}()
+	// *********** End Direct
+
+```
+
+and in `prometheus/prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: 'grpcserver'
+    scrape_interval: 1s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['localhost:9092']
+```
+
 
 The metrics would look like the following
 
@@ -404,4 +467,147 @@ grpc_server_msg_received_total{grpc_method="Watch",grpc_service="grpc.health.v1.
 ```
 ---
 
+## Metrics using OpenCensus
+
+Also included in this repo is sample code in how to emit gRPC stats using [OpenCensus](https://opencensus.io/).  Specifically, we will enable default gRPC stats and use OpenCensus's Prometheus Exporter.
+
+To use this 
+
+You can optionally enable this setting by uncommenting the lines in `greeter_server/main.go` 
+
+```golang
+import (
+	// *********** Start OpenCensus
+	"contrib.go.opencensus.io/exporter/prometheus"
+	"go.opencensus.io/plugin/ocgrpc"
+	"go.opencensus.io/stats/view"
+	// *********** End Opencensus
+)
+
+func main() {
+  ...
+	// *********** Start OpenCensus
+	pe, err := prometheus.NewExporter(prometheus.Options{
+		Namespace: "oc",
+	})
+	if err != nil {
+		log.Fatalf("Failed to create Prometheus exporter: %v", err)
+	}
+
+	go func() {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", pe)
+		if err := http.ListenAndServe(":9092", mux); err != nil {
+			log.Fatalf("Failed to run Prometheus /metrics endpoint: %v", err)
+		}
+	}()
+
+	if err := view.Register(ocgrpc.DefaultServerViews...); err != nil {
+		log.Fatal(err)
+	}
+	sopts = append(sopts, grpc.StatsHandler(&ocgrpc.ServerHandler{}))
+	s = grpc.NewServer(sopts...)
+	// *********** End Opencensus
+```
+
+and in `prometheus/prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: 'grpcserver'
+    scrape_interval: 1s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['localhost:9092']
+```
+
+Then run the server and client.  The promethus stats should show up as the following:
+
+```log
+# HELP oc_grpc_io_server_completed_rpcs Count of RPCs by method and status.
+# TYPE oc_grpc_io_server_completed_rpcs counter
+oc_grpc_io_server_completed_rpcs{grpc_server_method="grpc.health.v1.Health/Check",grpc_server_status="OK"} 6
+oc_grpc_io_server_completed_rpcs{grpc_server_method="helloworld.Greeter/SayHello",grpc_server_status="OK"} 6
+oc_grpc_io_server_completed_rpcs{grpc_server_method="helloworld.Greeter/SayHelloBiDiStream",grpc_server_status="OK"} 6
+oc_grpc_io_server_completed_rpcs{grpc_server_method="helloworld.Greeter/SayHelloClientStream",grpc_server_status="OK"} 6
+oc_grpc_io_server_completed_rpcs{grpc_server_method="helloworld.Greeter/SayHelloServerStream",grpc_server_status="OK"} 6
+```
+
 This repo is just a tutorial on fine-grain observability with istio and envoy
+
+
+## Metrics using GKE
+
+In this variation, we will create a GKE cluster into which we will deploy a gRPC server that exposes the prometheus scraping endpoint at `/metrics`.
+
+A GKE prometheus server will use [kubernetes_sd_configs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#kubernetes_sd_config) to discover each gRPC service (deployed with `ClusterIP`) as targets to accumulate metrics from each service
+
+The sample GKE gRPC ingress code is taken from [KE gRPC Ingress LoadBalancing](https://github.com/salrashid123/gcegrpc/tree/master/gke_ingress_lb)
+
+```bash
+cd gke/
+
+gcloud container  clusters create cluster-1 --machine-type "n1-standard-2" \
+  --zone us-central1-a  \
+  --num-nodes 2 --enable-ip-alias  \
+  --cluster-version "1.19" \
+  --scopes "https://www.googleapis.com/auth/cloud-platform" \
+  --enable-stackdriver-kubernetes
+
+kubectl apply \
+ -f fe-configmap.yaml \
+ -f fe-deployment.yaml \
+ -f fe-hc-secret.yaml \
+ -f fe-ingress.yaml \
+ -f fe-secret.yaml \
+ -f fe-server-secret.yaml \
+ -f fe-srv-ingress.yaml \
+ -f fe-srv-lb.yaml
+
+# get the endpoints (wait about 10mins)
+$ kubectl get po,svc,ing,cm
+NAME                                READY   STATUS    RESTARTS   AGE
+pod/fe-deployment-8f874fb6b-6xdgc   2/2     Running   0          94s
+pod/fe-deployment-8f874fb6b-8xztq   2/2     Running   0          94s
+
+NAME                      TYPE           CLUSTER-IP   EXTERNAL-IP     PORT(S)           AGE
+service/fe-srv-ingress    ClusterIP      10.4.9.115   <none>          50051/TCP         93s
+service/fe-srv-lb         LoadBalancer   10.4.6.171   35.225.171.36   50051:31916/TCP   93s
+service/kubernetes        ClusterIP      10.4.0.1     <none>          443/TCP           3m48s
+service/rpc-app-service   ClusterIP      10.4.8.12    <none>          9092/TCP          93s
+
+NAME                                   CLASS    HOSTS   ADDRESS         PORTS     AGE
+ingress.networking.k8s.io/fe-ingress   <none>   *       34.120.140.72   80, 443   94s
+
+NAME                         DATA   AGE
+configmap/kube-root-ca.crt   1      3m33s
+configmap/settings           2      95s
+
+# Test gRPC client server
+
+cd app/
+$ gcloud compute firewall-rules create allow-grpc-nlb --action=ALLOW --rules=tcp:50051 --source-ranges=0.0.0.0/0
+$ go run greeter_client/main.go --host 35.225.171.36 :50051 --usetls  --cacert certs/CA_crt.pem --servername server.domain.com
+
+$ go run greeter_client/main.go --host 34.120.140.72:443 --usetls  --cacert certs/CA_crt.pem --servername server.domain.com
+
+# now deploy prometheus 
+
+kubectl apply -f prom-deployment.yaml
+```
+
+View the prometheus service endpoint
+
+```bash
+kubectl  port-forward service/prometheus-service  9090
+```
+
+Open a browser and goto: `http://localhost:9090/targets`
+
+You should see the two gRPC application pods as targets (which means prometheus is scraping from each gRPC server)
+
+![images/gke_prom_target.png](images/gke_prom_target.png)
+
+as well as the stats:
+
+![images/gke_grpc_msg.png](images/gke_grpc_msg.png)
