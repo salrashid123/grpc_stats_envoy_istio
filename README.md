@@ -1,5 +1,5 @@
 
-## gRPC per method observability with envoy and Istio
+## gRPC per method observability with envoy, Istio, OpenCensus and GKE
 
 
 This repo is a simple tutorial on how to setup envoy and istio such that _per method_ statistics are emitted to prometheus+grafana.
