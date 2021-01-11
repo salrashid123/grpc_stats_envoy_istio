@@ -587,7 +587,7 @@ configmap/settings           2      95s
 
 cd app/
 $ gcloud compute firewall-rules create allow-grpc-nlb --action=ALLOW --rules=tcp:50051 --source-ranges=0.0.0.0/0
-$ go run greeter_client/main.go --host 35.225.171.36 :50051 --usetls  --cacert certs/CA_crt.pem --servername server.domain.com
+$ go run greeter_client/main.go --host 35.225.171.36:50051 --usetls  --cacert certs/CA_crt.pem --servername server.domain.com
 
 $ go run greeter_client/main.go --host 34.120.140.72:443 --usetls  --cacert certs/CA_crt.pem --servername server.domain.com
 

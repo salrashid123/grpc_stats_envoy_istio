@@ -20,7 +20,7 @@ spec:
         args: [
           "--http-listen-addr=0.0.0.0:8080",
           "--grpcaddr=localhost:50051",
-          "--service-name=echo.EchoServer",
+          "--service-name=helloworld.Greeter",
           "--https-listen-ca=/config/CA_crt_hc.pem",
           "--https-listen-cert=/certs/http_server_crt.pem",
           "--https-listen-key=/certs/http_server_key.pem",
