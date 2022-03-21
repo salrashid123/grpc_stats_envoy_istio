@@ -33,7 +33,7 @@ spec:
       serviceAccountName: svc1-sa
       containers:
       - name: myapp-container
-        image: salrashid123/greeter_server:greeter_server_image
+        image: docker.io/salrashid123/grpc_stats_envoy_istio:prom
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 50051            

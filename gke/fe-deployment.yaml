@@ -40,8 +40,8 @@ spec:
           mountPath: /certs
           readOnly: true          
       - name: grpc-app
-        image: docker.io/salrashid123/greeter_server_prom
-        imagePullPolicy: Always
+        image: docker.io/salrashid123/grpc_stats_envoy_istio:prom
+        imagePullPolicy: IfNotPresent
         args: [
           "--grpcport=0.0.0.0:50051",
           "--usetls",

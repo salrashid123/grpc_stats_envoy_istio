@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	pb "helloworld"
+	pb "github.com/salrashid123/grpc_stats_envoy_istio/app/helloworld"
 
 	"github.com/google/uuid"
 
@@ -29,6 +29,7 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	// *********** Start OpenCensus
+	// full sample at https://gist.github.com/salrashid123/bf0dbf3a979273f9baa475644d5aea01
 	// "contrib.go.opencensus.io/exporter/prometheus"
 	// "go.opencensus.io/plugin/ocgrpc"
 	// "go.opencensus.io/stats/view"
@@ -174,7 +175,7 @@ func main() {
 	// }
 	// sopts = append(sopts, grpc.StatsHandler(&ocgrpc.ServerHandler{}))
 	// s = grpc.NewServer(sopts...)
-	// *********** End Opencensus
+	// // *********** End Opencensus
 
 	// *********** Start Direct
 	// Use gRPC-go internal prom exporter

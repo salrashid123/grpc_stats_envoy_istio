@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package helloworld;
 
+option go_package = "github.com/salrashid123/grpc_stats_envoy_istio/app/helloworld";
+
 // The greeting service definition.
 service Greeter {
   // Sends a greeting

@@ -10,7 +10,7 @@ import (
 	"log"
 	"time"
 
-	pb "helloworld"
+	pb "github.com/salrashid123/grpc_stats_envoy_istio/app/helloworld"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -19,10 +19,11 @@ import (
 )
 
 var (
-	address    = flag.String("host", "localhost:8080", "host:port of gRPC server")
-	cacert     = flag.String("cacert", "CA_crt.pem", "TLS CACert")
-	usetls     = flag.Bool("usetls", false, "startup with TLS")
-	serverName = flag.String("servername", "grpc.domain.com", "SNI Name")
+	address        = flag.String("host", "localhost:8080", "host:port of gRPC server")
+	cacert         = flag.String("cacert", "CA_crt.pem", "TLS CACert")
+	usetls         = flag.Bool("usetls", false, "startup with TLS")
+	skipHealhCheck = flag.Bool("skipHealhCheck", false, "Skip direct Healthcheck call")
+	serverName     = flag.String("servername", "grpc.domain.com", "SNI Name")
 )
 
 const (
@@ -65,15 +66,17 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	resp, err := healthpb.NewHealthClient(conn).Check(ctx, &healthpb.HealthCheckRequest{Service: "helloworld.Greeter"})
-	if err != nil {
-		log.Fatalf("HealthCheck failed %+v", err)
-	}
-	if resp.GetStatus() != healthpb.HealthCheckResponse_SERVING {
-		log.Fatalf("service not in serving state: ", resp.GetStatus().String())
-	}
-	log.Printf("RPC HealthChekStatus:%v", resp.GetStatus())
 
+	if !*skipHealhCheck {
+		resp, err := healthpb.NewHealthClient(conn).Check(ctx, &healthpb.HealthCheckRequest{Service: "helloworld.Greeter"})
+		if err != nil {
+			log.Fatalf("HealthCheck failed %+v", err)
+		}
+		if resp.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+			log.Fatalf("service not in serving state: ", resp.GetStatus().String())
+		}
+		log.Printf("RPC HealthChekStatus:%v", resp.GetStatus())
+	}
 	// ******** Unary Request
 	for i := 0; i < 5; i++ {
 		r, err := c.SayHello(ctx, &pb.HelloRequest{Name: defaultName})

@@ -174,8 +174,9 @@ Create an istio cluster (we are using GKE)
 ```bash
 cd istio/
 
-gcloud container  clusters create cluster-1 --machine-type "n1-standard-2" --zone us-central1-a  --num-nodes 4 --enable-ip-alias \
-  --cluster-version "1.19" -q
+gcloud container  clusters create cluster-1 \
+  --machine-type "n1-standard-2" --zone us-central1-a \
+  --num-nodes 4 --enable-ip-alias -q
 
 gcloud container clusters get-credentials cluster-1 --zone us-central1-a
 
@@ -183,20 +184,25 @@ kubectl create clusterrolebinding cluster-admin-binding --clusterrole=cluster-ad
 
 kubectl create ns istio-system
 
-export ISTIO_VERSION=1.8.0
+export ISTIO_VERSION=1.9.1
 
-wget https://github.com/istio/istio/releases/download/$ISTIO_VERSION/istio-$ISTIO_VERSION-linux-amd64.tar.gz
-tar xvf istio-$ISTIO_VERSION-linux-amd64.tar.gz
-rm istio-$ISTIO_VERSION-linux-amd64.tar.gz
+wget -O /tmp/istio-$ISTIO_VERSION-linux-amd64.tar.gz https://github.com/istio/istio/releases/download/$ISTIO_VERSION/istio-$ISTIO_VERSION-linux-amd64.tar.gz
+tar xvf /tmp/istio-$ISTIO_VERSION-linux-amd64.tar.gz  -C /tmp/
 
-export PATH=`pwd`/istio-$ISTIO_VERSION/bin:$PATH
+export PATH=/tmp/istio-$ISTIO_VERSION/bin:$PATH
 
-istioctl install --set profile=preview \
+
+istioctl install --set profile=demo \
  --set meshConfig.enableAutoMtls=true  \
- --set values.gateways.istio-ingressgateway.runAsRoot=true 
+ --set values.gateways.istio-ingressgateway.runAsRoot=true \
+ --set meshConfig.outboundTrafficPolicy.mode=REGISTRY_ONLY 
 
-kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.8/samples/addons/prometheus.yaml
-kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.8/samples/addons/grafana.yaml
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.9/samples/addons/prometheus.yaml
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.9/samples/addons/grafana.yaml
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.9/samples/addons/jaeger.yaml
+sleep 30
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.9/samples/addons/kiali.yaml
+
 
 kubectl get no,po,rc,svc,ing,deployment -n istio-system 
 
@@ -304,10 +310,10 @@ kubectl -n istio-system apply -f attribute_gen_service.yaml
 Now extract the stats filter
 
 ```
-kubectl -n istio-system get envoyfilter stats-filter-1.8 -o yaml > stats-filter-1.8.yaml
+kubectl -n istio-system get envoyfilter stats-filter-1.9 -o yaml > stats-filter-1.9.yaml
 ```
 
-Edit `stats-filter-1.8.yaml`
+Edit `stats-filter-1.9.yaml`
 
 and define the rule shown below under the `context: SIDECAR_INBOUND` section.
 (btw, the istio docs has incorrect indents shown...)
@@ -319,11 +325,11 @@ and define the rule shown below under the `context: SIDECAR_INBOUND` section.
       listener:
         filterChain:
           filter:
-            name: envoy.http_connection_manager
+            name: envoy.filters.network.http_connection_manager
             subFilter:
-              name: envoy.router
+              name: envoy.filters.http.router
       proxy:
-        proxyVersion: ^1\.8.*
+        proxyVersion: ^1\.9.*
     patch:
       operation: INSERT_BEFORE
       value:
@@ -337,30 +343,36 @@ and define the rule shown below under the `context: SIDECAR_INBOUND` section.
                 '@type': type.googleapis.com/google.protobuf.StringValue
                 value: |
                   {
+                    "debug": "false",
+                    "stat_prefix": "istio",
                     "metrics": [
+                      {
+                        "dimensions": {
+                          "destination_cluster": "node.metadata['CLUSTER_ID']",
+                          "source_cluster": "downstream_peer.cluster_id"
+                        }
+                      },
                       {
                         "name": "requests_total",
                         "dimensions": {
                           "request_operation": "istio_operationId"
                         }
-                      }
+                      }                      
                     ]
                   }
               root_id: stats_inbound
               vm_config:
-                allow_precompiled: true
                 code:
                   local:
-                    filename: /etc/istio/extensions/stats-filter.compiled.wasm
-                runtime: envoy.wasm.runtime.v8
+                    inline_string: envoy.wasm.stats
+                runtime: envoy.wasm.runtime.null
                 vm_id: stats_inbound
-
 ```
 
 Apply
 
 ```bash
-kubectl apply -n istio-system -f stats-filter-1.8.yaml
+kubectl apply -n istio-system -f stats-filter-1.9.yaml
 ```
 
 #### Send more grpc Requests
@@ -452,6 +464,12 @@ scrape_configs:
       - targets: ['localhost:9092']
 ```
 
+```bash
+cd app/
+go run greeter_server/main.go
+go run greeter_client/main.go  --host localhost:50051
+```
+
 
 The metrics would look like the following
 
@@ -471,9 +489,9 @@ grpc_server_msg_received_total{grpc_method="Watch",grpc_service="grpc.health.v1.
 
 Also included in this repo is sample code in how to emit gRPC stats using [OpenCensus](https://opencensus.io/).  Specifically, we will enable default gRPC stats and use OpenCensus's Prometheus Exporter.
 
-To use this 
 
-You can optionally enable this setting by uncommenting the lines in `greeter_server/main.go` 
+
+You can optionally enable this setting by uncommenting the lines in `greeter_server/main.go` (alternatively replace entire `main.go` with [https://gist.github.com/salrashid123/bf0dbf3a979273f9baa475644d5aea01](https://gist.github.com/salrashid123/bf0dbf3a979273f9baa475644d5aea01)) as `docker.io/salrashid123/grpc_stats_envoy_istio:oc`
 
 ```golang
 import (
@@ -521,7 +539,15 @@ scrape_configs:
       - targets: ['localhost:9092']
 ```
 
-Then run the server and client.  The promethus stats should show up as the following:
+Then run the server and client. 
+
+```bash
+cd app/
+go run greeter_server/main.go
+go run greeter_client/main.go  --host localhost:50051
+```
+
+ The promethus stats should show up as the following:
 
 ```log
 # HELP oc_grpc_io_server_completed_rpcs Count of RPCs by method and status.
@@ -550,7 +576,6 @@ cd gke/
 gcloud container  clusters create cluster-1 --machine-type "n1-standard-2" \
   --zone us-central1-a  \
   --num-nodes 2 --enable-ip-alias  \
-  --cluster-version "1.19" \
   --scopes "https://www.googleapis.com/auth/cloud-platform" \
   --enable-stackdriver-kubernetes
 
@@ -589,7 +614,7 @@ cd app/
 $ gcloud compute firewall-rules create allow-grpc-nlb --action=ALLOW --rules=tcp:50051 --source-ranges=0.0.0.0/0
 $ go run greeter_client/main.go --host 35.225.171.36:50051 --usetls  --cacert certs/CA_crt.pem --servername server.domain.com
 
-$ go run greeter_client/main.go --host 34.120.140.72:443 --usetls  --cacert certs/CA_crt.pem --servername server.domain.com
+$ go run greeter_client/main.go --host 34.120.140.72:443 --usetls -skipHealhCheck --cacert certs/CA_crt.pem --servername server.domain.com
 
 # now deploy prometheus 
 
@@ -611,3 +636,14 @@ You should see the two gRPC application pods as targets (which means prometheus 
 as well as the stats:
 
 ![images/gke_grpc_msg.png](images/gke_grpc_msg.png)
+
+```
+grpc_server_handled_total{grpc_code="OK", grpc_method="Check", grpc_service="grpc.health.v1.Health", grpc_type="unary", instance="10.12.0.8:9092", job="grpcserver"}
+grpc_server_handled_total{grpc_code="OK", grpc_method="Check", grpc_service="grpc.health.v1.Health", grpc_type="unary", instance="10.12.1.10:9092", job="grpcserver"}
+grpc_server_handled_total{grpc_code="OK", grpc_method="SayHello", grpc_service="helloworld.Greeter", grpc_type="unary", instance="10.12.0.8:9092", job="grpcserver"}
+grpc_server_handled_total{grpc_code="OK", grpc_method="SayHello", grpc_service="helloworld.Greeter", grpc_type="unary", instance="10.12.1.10:9092", job="grpcserver"}
+grpc_server_handled_total{grpc_code="OK", grpc_method="SayHelloBiDiStream", grpc_service="helloworld.Greeter", grpc_type="bidi_stream", instance="10.12.0.8:9092", job="grpcserver"}
+grpc_server_handled_total{grpc_code="OK", grpc_method="SayHelloClientStream", grpc_service="helloworld.Greeter", grpc_type="client_stream", instance="10.12.1.10:9092", job="grpcserver"}
+grpc_server_handled_total{grpc_code="OK", grpc_method="SayHelloServerStream", grpc_service="helloworld.Greeter", grpc_type="server_stream", instance="10.12.0.8:9092", job="grpcserver"}
+grpc_server_handled_total{grpc_code="OK", grpc_method="SayHelloServerStream", grpc_service="helloworld.Greeter", grpc_type="server_stream", instance="10.12.1.10:9092", job="grpcserver"}
+```
