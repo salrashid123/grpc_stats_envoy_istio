@@ -51,6 +51,8 @@ Notice we configured the filter to emit everything:
               stats_for_all_methods: true
               enable_upstream_stats: true                            
           - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router                  
 ```
 
 ### Start GRPC Server
