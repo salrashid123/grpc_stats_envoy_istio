@@ -6,8 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
+	"os"
 	"time"
 
 	pb "github.com/salrashid123/grpc_stats_envoy_istio/app/helloworld"
@@ -20,7 +20,7 @@ import (
 
 var (
 	address        = flag.String("host", "localhost:8080", "host:port of gRPC server")
-	cacert         = flag.String("cacert", "CA_crt.pem", "TLS CACert")
+	cacert         = flag.String("cacert", "root-ca.crt", "TLS CACert")
 	usetls         = flag.Bool("usetls", false, "startup with TLS")
 	skipHealhCheck = flag.Bool("skipHealhCheck", false, "Skip direct Healthcheck call")
 	serverName     = flag.String("servername", "grpc.domain.com", "SNI Name")
@@ -43,7 +43,7 @@ func main() {
 	} else {
 		var tlsCfg tls.Config
 		rootCAs := x509.NewCertPool()
-		pem, err := ioutil.ReadFile(*cacert)
+		pem, err := os.ReadFile(*cacert)
 		if err != nil {
 			log.Fatalf("failed to load root CA certificates  error=%v", err)
 		}

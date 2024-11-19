@@ -6,7 +6,7 @@ metadata:
   labels:
     type: fe-srv
   annotations:
-    service.alpha.kubernetes.io/app-protocols: '{"fe":"HTTP2"}'
+    service.kubernetes.io/app-protocols: '{"fe":"HTTP2"}'
 spec:
   type: LoadBalancer  
   ports:
@@ -24,7 +24,7 @@ metadata:
   labels:
     type: fe-prom-srv
   annotations:
-    service.alpha.kubernetes.io/app-protocols: '{"fe-prom":"HTTP"}'
+    service.kubernetes.io/app-protocols: '{"fe-prom":"HTTP"}'
 spec:
   type: ClusterIP  
   ports:

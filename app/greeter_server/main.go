@@ -40,8 +40,8 @@ var (
 	grpcport     = flag.String("grpcport", ":50051", "grpcport")
 	randomJitter = flag.Int("randomJitter", 100, "host:port of gRPC server")
 
-	tlsCert = flag.String("tlsCert", "server_crt.pem", "TLS Server Certificate")
-	tlsKey  = flag.String("tlsKey", "server_key.pem", "TLS Server Key")
+	tlsCert = flag.String("tlsCert", "grpc.crt", "TLS Server Certificate")
+	tlsKey  = flag.String("tlsKey", "grpc.key", "TLS Server Key")
 	usetls  = flag.Bool("usetls", false, "startup with TLS")
 
 	hs *health.Server

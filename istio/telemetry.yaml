@@ -1,0 +1,37 @@
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: add-istio-telemetry
+  namespace: istio-system
+spec:
+  metrics:
+    - providers:
+        - name: prometheus
+      overrides:
+        - match:
+            mode: CLIENT_AND_SERVER
+            metric: REQUEST_COUNT
+---
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: add-default-telemetry
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      service.istio.io/canonical-name: svc1 
+  metrics:
+  - overrides:
+    - match:
+        metric: ALL_METRICS
+        mode: CLIENT
+    - match:
+        metric: ALL_METRICS
+        mode: SERVER
+      tagOverrides:
+        GRPCRequestPath:
+          value: request.path
+    providers:
+    - name: prometheus
+

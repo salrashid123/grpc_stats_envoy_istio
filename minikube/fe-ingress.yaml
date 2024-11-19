@@ -3,9 +3,10 @@ kind: Ingress
 metadata:
   name: fe-ingress
   annotations:
-    kubernetes.io/ingress.class: "gce"
-    kubernetes.io/ingress.allow-http: "false"   
+    kubernetes.io/ingress.allow-http: "false"  
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPCS"  
 spec:
+  ingressClassName: nginx
   tls:
   - hosts:
     - server.domain.com
@@ -14,8 +15,8 @@ spec:
   - host: "server.domain.com"
     http:
       paths:
-      - path: "/helloworld.Greeter/*"
-        pathType: ImplementationSpecific        
+      - path: "/"
+        pathType: Prefix        
         backend:
           service:
             name: fe-srv-ingress
