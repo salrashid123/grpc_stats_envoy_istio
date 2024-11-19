@@ -1,5 +1,5 @@
 
-## gRPC per method observability with envoy, Istio, OpenCensus and GKE
+## gRPC per method observability with envoy, Istio, OpenCensus and Minikube
 
 
 This repo is a simple tutorial on how to setup envoy and istio such that _per method_ statistics are emitted to prometheus+grafana.
@@ -67,7 +67,7 @@ go run greeter_server/main.go
 The server will by default listen in on `:50051`
 
 
-## Start Prometheus
+### Start Prometheus
 
 Start a local instance of prometheus that interrogates envoy:
 
@@ -127,8 +127,6 @@ The gRPC client will make several different types of API calls:
 
 (you can put this command in a loop,eg 6 times)
 
-### Observe
-
 Prometheus will begin collecting all the metrics from envoy at this point.  The specific one we are interested in is just `SayHello` API method call.
 
 #### Envoy
@@ -162,7 +160,7 @@ Use the same metric as above (i.,e invocation count)
 ![images/grafana_dash_1.png](images/grafana_dash_1.png)
 
 
-### Istio
+## Istio
 
 The istio configuration is a bit different.  It uses a specific wasm stats filter as described here
 
@@ -462,7 +460,7 @@ oc_grpc_io_server_completed_rpcs{grpc_server_method="helloworld.Greeter/SayHello
 This repo is just a tutorial on fine-grain observability with istio and envoy
 
 
-## Metrics Endpoint
+## Minikube
 
 In this variation, we will create a  cluster into which we will deploy a gRPC server that exposes the prometheus scraping endpoint at `/metrics`.
 
